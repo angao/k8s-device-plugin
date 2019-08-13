@@ -255,7 +255,7 @@ func (m *NvidiaDevicePlugin) GenerateExtendedResources() {
 		bandwidth := appendString(convertUint(dev.PCI.Bandwidth), "MB")
 		memory := appendString(convertUint64(dev.Memory), "MiB")
 
-		extendedResource := &v1beta1.ExtendedResource{
+		er := &v1beta1.ExtendedResource{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: extendedResourceName,
 				Labels: map[string]string{
@@ -289,26 +289,28 @@ func (m *NvidiaDevicePlugin) GenerateExtendedResources() {
 			},
 		}
 
-		extendedResourceOrigin, err := m.resourceClient.ResourceV1beta1().ExtendedResources().Get(extendedResourceName, metav1.GetOptions{})
-		if err == nil && extendedResourceOrigin != nil {
-			extendedResource.ResourceVersion = extendedResourceOrigin.ResourceVersion
-			_, err := m.resourceClient.ResourceV1beta1().ExtendedResources().Update(extendedResource)
+		extendedResource, err := m.resourceClient.ResourceV1beta1().ExtendedResources().Get(extendedResourceName, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			// create
+			_, err = m.resourceClient.ResourceV1beta1().ExtendedResources().Create(er)
 			if err != nil {
-				log.Printf("Update ExtendedResource: %+v", err)
-				continue
+				log.Printf("Failed to create ExtendedResource: %+v", err)
 			}
+			continue
 		}
 
-		if errors.IsNotFound(err) {
-			_, err := m.resourceClient.ResourceV1beta1().ExtendedResources().Create(extendedResource)
+		if err == nil {
+			// update
+			extendedResource.Spec = er.Spec
+			extendedResource.Status = er.Status
+			extendedResource.ObjectMeta.Labels = er.ObjectMeta.Labels
+			_, err = m.resourceClient.ResourceV1beta1().ExtendedResources().Update(extendedResource)
 			if err != nil {
-				log.Printf("Create ExtendedResource: %+v", err)
-				continue
+				log.Printf("Failed to update ExtendedResource: %+v", err)
 			}
+			continue
 		}
-		if err != nil {
-			log.Printf("Get ExtendedResource: %+v", err)
-		}
+		log.Print(err)
 	}
 }
 
